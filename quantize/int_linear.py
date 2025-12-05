@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from quantize.quantize import UniformAffineQuantizer
+from quantize.quantizer import UniformAffineQuantizer
 import time
 
 
@@ -20,7 +20,6 @@ class QuantLinear(nn.Module):
         act_quant_params: dict = {},
         disable_input_quant=False,
         rotate=True,
-        # is_down=False
         down_proj=False
     ):
         super().__init__()
@@ -46,7 +45,7 @@ class QuantLinear(nn.Module):
 
         self.disable_input_quant = disable_input_quant
         self.use_temporary_parameter = False
-        self.init_duquant_params = torch.tensor(0) if weight_quant_params['quant_method'] == 'ruquant' else torch.tensor(1)
+        self.init_ruquant_params = torch.tensor(0) if weight_quant_params['quant_method'] == 'ruquant' else torch.tensor(1)
 
 
     def forward(self, input: torch.Tensor):
@@ -63,9 +62,9 @@ class QuantLinear(nn.Module):
             weight = self.temp_weight
             bias = self.temp_bias
         elif self.use_weight_quant:
-            if not self.init_duquant_params:
-                self.weight_quantizer.copy_duquant_params(self.act_quantizer)
-                self.init_duquant_params = torch.tensor(1) 
+            if not self.init_ruquant_params:
+                self.weight_quantizer.copy_ruquant_params(self.act_quantizer)
+                self.init_ruquant_params = torch.tensor(1) 
             weight = self.weight_quantizer(self.weight)
             bias = self.bias
             out_du=input.squeeze()@weight.t()
@@ -84,10 +83,10 @@ class QuantLinear(nn.Module):
         self.use_weight_quant = weight_quant
         self.use_act_quant = act_quant
 
-    def copy_quantizers_duquant_params(self, proj):
-        assert proj.init_duquant_params
-        self.init_duquant_params = torch.tensor(1)
-        self.weight_quantizer.copy_duquant_params(proj.weight_quantizer)
-        self.act_quantizer.copy_duquant_params(proj.act_quantizer)
+    def copy_quantizers_ruquant_params(self, proj):
+        assert proj.init_ruquant_params
+        self.init_ruquant_params = torch.tensor(1)
+        self.weight_quantizer.copy_ruquant_params(proj.weight_quantizer)
+        self.act_quantizer.copy_ruquant_params(proj.act_quantizer)
 
 

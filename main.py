@@ -96,20 +96,13 @@ def evaluate(lm, args, logger):
         assert 0
 
     if args.eval_ppl:
-        # for dataset in ["wikitext2", "ptb", "c4","ptb-new",'c4-new']:
         for dataset in ["wikitext2", 'c4']:
-            cache_testloader = f'{args.cache_dir}/testloader_{args.model_family}_{dataset}_all.cache'
-            if os.path.exists(cache_testloader) :
-                testloader = torch.load(cache_testloader,weights_only=False)
-                logger.info(f"load calibration from {cache_testloader}")
-            else:
-                dataloader, testloader = get_loaders(
-                    dataset,
-                    seed=args.seed,
-                    model=args.model,
-                    seqlen=lm.seqlen,
-                )
-                torch.save(testloader, cache_testloader)
+            dataloader, testloader = get_loaders(
+                dataset,
+                seed=args.seed,
+                model=args.model,
+                seqlen=lm.seqlen,
+            )
             if "c4" in dataset:
                 testenc = testloader
             else:
@@ -198,7 +191,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, help="model name of model path")
-    parser.add_argument("--cache_dir", default="./cache", type=str, help="cache dir of dataset, leading to faster debug")
+    # parser.add_argument("--cache_dir", default="./cache", type=str, help="cache dir of dataset, leading to faster debug")
     parser.add_argument("--output_dir", default="./log/", type=str, help="direction of logging file")
     parser.add_argument("--save_dir", default=None, type=str, help="direction for saving fake quantization model")
     parser.add_argument("--resume", type=str, default=None)
@@ -216,7 +209,7 @@ def main():
     parser.add_argument("--wbits", type=int, default=4)
     parser.add_argument("--abits", type=int, default=16)
     parser.add_argument("--group_size", type=int, default=None)
-    parser.add_argument("--alpha", type=float, default=0.5)
+    parser.add_argument("--alpha", type=float, default=0.6)
     parser.add_argument("--let_alpha", type=float, default=0.8)
     parser.add_argument("--act_group_size", type=int, default=None)
     parser.add_argument("--let_lr", type=float, default=5e-3)
@@ -225,7 +218,7 @@ def main():
     parser.add_argument("--wd", type=float, default=0)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--smooth_epochs", type=int, default=0)
-    parser.add_argument("--smooth",default=False, action="store_true")
+    parser.add_argument("--smooth",default=True, action="store_true")
     parser.add_argument("--let",default=False, action="store_true",help="activate learnable equivalent transformation")
     parser.add_argument("--lwc",default=False, action="store_true",help="activate learnable weight clipping")
     parser.add_argument("--aug_loss", default=False, action="store_true", help="calculate additional loss with same input")
@@ -245,13 +238,13 @@ def main():
     parser.add_argument("--act-scales", type=str, default=None)
     parser.add_argument("--act-shifts", type=str, default=None)
 
-    # DuQuant
-    parser.add_argument("--max_rotation_step", type=int, default=256, help="max steps for rotation transformation")
+    # RUQuant
+    parser.add_argument("--max_rotation_step", type=int, default=16, help="max steps for rotation transformation")
     parser.add_argument("--permutation_times", type=int, default=1, help="times of permutation transformation")
     parser.add_argument("--lac", type=float, default=None, help="activation clipping ratio")
     parser.add_argument("--swc", type=float, default=None, help="weight clipping ratio, enable withou lwc")
     parser.add_argument("--block_size", type=int, default=128, help="block size for rotation matrices")
-    
+    parser.add_argument("--random_permutation_times", type=int, default=3, help="times of random permutation transformation")
     
     parser.add_argument("--lh",default=False, action="store_true",help="activate learnable equivalent transformation")
     parser.add_argument("--lh_lr", type=float, default=1e-2)
@@ -335,13 +328,21 @@ def main():
     args.output_dir = os.path.join(args.output_dir, f"{args.model.split('/')[-1]}_w{args.wbits}a{args.abits}")
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    if args.cache_dir:
-        Path(args.cache_dir).mkdir(parents=True, exist_ok=True)
     if args.save_dir:
         Path(args.save_dir).mkdir(parents=True, exist_ok=True)
     output_dir = Path(args.output_dir)
     logger = utils.create_logger(output_dir)
-    logger.info(args)
+    
+
+    logger.info("=" * 60)
+    logger.info("Experiment configuration parameters:")
+    logger.info("=" * 60)
+    args_dict = vars(args)
+    for param in sorted(args_dict.keys()):
+        value = args_dict[param]
+        value_str = str(value)
+        logger.info(f"{param:30s} = {value_str}")
+    logger.info("=" * 60)
     
     # load model
     if args.net is None:
@@ -365,24 +366,23 @@ def main():
         "lwc":args.lwc,
         "swc":args.swc,
         "quant_method": args.quant_method,
-        # "block_size": args.block_size,
-        "block_size": 128,
+        "block_size": args.block_size,
         "max_rotation_step": args.max_rotation_step,
         "permutation_times": args.permutation_times,
+        "random_permutation_times": args.random_permutation_times,
     }
     args.act_quant_params = {
         "n_bits":  args.abits,
         "per_channel_axes": [],
         "symmetric": False,
         "lac":args.lac,
-        # "lh":args.lh,
         "act_group_size": args.act_group_size,
         "dynamic_method": args.a_dynamic_method,
         "quant_method": args.quant_method,
-        # "block_size": args.block_size,
-        "block_size": 128,
+        "block_size": args.block_size,
         "max_rotation_step": args.max_rotation_step,
         "permutation_times": args.permutation_times,
+        "random_permutation_times": args.random_permutation_times,
     }
     args.q_quant_params = {
         "n_bits": args.abits,
@@ -390,9 +390,9 @@ def main():
         "symmetric": False,
         "dynamic_method": args.a_dynamic_method,
         "quant_method": args.quant_method,
-        # "block_size": args.block_size,
-        "block_size": 128,
+        "block_size": args.block_size,
         "max_rotation_step": args.max_rotation_step,
+        "random_permutation_times": args.random_permutation_times,
     }
     args.k_quant_params = {
         "n_bits": args.abits,
@@ -400,16 +400,15 @@ def main():
         "symmetric": False,
         "dynamic_method": args.a_dynamic_method,
         "quant_method": args.quant_method,
-        # "block_size": args.block_size,
-        "block_size": 128
+        "block_size": args.block_size,
+
     }
     args.v_quant_params = {
         "n_bits": args.abits,
         "per_channel_axes": [],
         "symmetric": False,
         "dynamic_method": args.a_dynamic_method,
-        # "block_size": args.block_size
-        "block_size": 128
+        "block_size": args.block_size
     }
     args.p_quant_params = {
         "n_bits": 16,
@@ -430,20 +429,13 @@ def main():
     if args.wbits < 16 or args.abits <16:
         logger.info("=== start quantization ===")
         tick = time.time()     
-        # load calibration dataset
-        cache_dataloader = f'{args.cache_dir}/dataloader_{args.model_family}_{args.calib_dataset}_{args.nsamples}.cache'
-        if os.path.exists(cache_dataloader):
-            dataloader = torch.load(cache_dataloader)
-            logger.info(f"load calibration from {cache_dataloader}")
-        else:
-            dataloader, _ = get_loaders(
-                args.calib_dataset,
-                nsamples=args.nsamples,
-                seed=args.seed,
-                model=args.model,
-                seqlen=lm.seqlen,
-            )
-            torch.save(dataloader, cache_dataloader)    
+        dataloader, _ = get_loaders(
+            args.calib_dataset,
+            nsamples=args.nsamples,
+            seed=args.seed,
+            model=args.model,
+            seqlen=lm.seqlen,
+        )   
         act_scales = None
         act_shifts = None
         if args.smooth:

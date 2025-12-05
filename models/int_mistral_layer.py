@@ -38,13 +38,13 @@ class QuantMistralMLP(nn.Module):
                                            args.up_weight_quant_params,
                                            args.up_act_quant_params)
         self.act_fn = ACT2FN[hidden_act]
-        self.init_duquant_params = torch.tensor(0) if args.gate_weight_quant_params['quant_method'] == 'ruquant' else torch.tensor(1)
+        self.init_ruquant_params = torch.tensor(0) if args.gate_weight_quant_params['quant_method'] == 'ruquant' else torch.tensor(1)
 
     def forward(self, x):
-        if not self.init_duquant_params:
-            self.init_duquant_params = torch.tensor(1)
+        if not self.init_ruquant_params:
+            self.init_ruquant_params = torch.tensor(1)
             act = self.act_fn(self.gate_proj(x))
-            self.up_proj.copy_quantizers_duquant_params(self.gate_proj)
+            self.up_proj.copy_quantizers_ruquant_params(self.gate_proj)
             mul = act * self.up_proj(x)
             return self.down_proj(mul)
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
@@ -101,7 +101,7 @@ class QuantMistralAttention(nn.Module):
 
         self.use_weight_quant = False
         self.use_act_quant = False
-        self.init_duquant_params = torch.tensor(0) if args.gate_weight_quant_params['quant_method'] == 'ruquant' else torch.tensor(1)
+        self.init_ruquant_params = torch.tensor(0) if args.gate_weight_quant_params['quant_method'] == 'ruquant' else torch.tensor(1)
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
@@ -118,11 +118,11 @@ class QuantMistralAttention(nn.Module):
         bsz, q_len, _ = hidden_states.size()
 
         query_states = self.q_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        if not self.init_duquant_params:
-            self.k_proj.copy_quantizers_duquant_params(self.q_proj)
+        if not self.init_ruquant_params:
+            self.k_proj.copy_quantizers_ruquant_params(self.q_proj)
         key_states =self.k_proj(hidden_states).view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        if not self.init_duquant_params:
-            self.v_proj.copy_quantizers_duquant_params(self.q_proj)
+        if not self.init_ruquant_params:
+            self.v_proj.copy_quantizers_ruquant_params(self.q_proj)
         value_states = self.v_proj(hidden_states).view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
@@ -181,7 +181,7 @@ class QuantMistralAttention(nn.Module):
         if not output_attentions:
             attn_weights = None
         
-        self.init_duquant_params = torch.tensor(1)
+        self.init_ruquant_params = torch.tensor(1)
 
         return attn_output, attn_weights, past_key_value
     
@@ -375,18 +375,18 @@ class QuantMistralDecoderLayer(nn.Module):
             if isinstance(module, QuantLinear):
                 module.weight_quantizer.register_scales_and_zeros()
     
-    def register_duquant_params(self):        
+    def register_ruquant_params(self):        
         for name, module in self.named_modules():
             if isinstance(module, QuantMistralMLP) or isinstance(module, QuantMistralAttention):
-                delattr(module, 'init_duquant_params')
-                module.register_buffer('init_duquant_params', torch.tensor(1))
+                delattr(module, 'init_ruquant_params')
+                module.register_buffer('init_ruquant_params', torch.tensor(1))
             if isinstance(module, QuantLinear):
-                module.weight_quantizer.register_duquant_params()
-                module.act_quantizer.register_duquant_params()
+                module.weight_quantizer.register_ruquant_params()
+                module.act_quantizer.register_ruquant_params()
     
-    def load_duquant_params(self, state_dict, device):
+    def load_ruquant_params(self, state_dict, device):
         for k, v in state_dict.items():
-            if k.find('R') > -1 or k.find('permutation_list') > -1 or k.find('init_duquant_params') > -1:
+            if k.find('R') > -1 or k.find('permutation_list') > -1 or k.find('init_ruquant_params') > -1:
                 exec(f'self.{k} = v.to(device)')
     
     def load_smooth_params(self, state_dict, device):

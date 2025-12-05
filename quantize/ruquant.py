@@ -156,9 +156,9 @@ def ruquant(
 
 
     if args.resume:
-        duquant_parameters = torch.load(os.path.join(args.resume, f"duquant_parameters.pth"))
+        ruquant_parameters = torch.load(os.path.join(args.resume, f"ruquant_parameters.pth"))
     else:
-        duquant_parameters = {}
+        ruquant_parameters = {}
 
     for i in range(len(layers)):
         for name in ['q', 'k', 'v', 'gate', 'up', 'down', 'o']:
@@ -175,7 +175,7 @@ def ruquant(
             qlayer.mlp.to("cuda:1")
 
         if args.quant_method == 'ruquant':
-            set_init_duquant_params_state(qlayer, True)
+            set_init_ruquant_params_state(qlayer, True)
 
         set_quant_state(qlayer, weight_quant=False, act_quant=False)
         if args.epochs > 0 :
@@ -196,12 +196,12 @@ def ruquant(
         
         if args.resume:
             # raise NotImplementedError
-            qlayer.load_state_dict(duquant_parameters[i], strict=False)
-            print(duquant_parameters[i].keys())
+            qlayer.load_state_dict(ruquant_parameters[i], strict=False)
+            print(ruquant_parameters[i].keys())
 
         if args.smooth:
-            if duquant_parameters.get(i):
-                qlayer.load_smooth_params(duquant_parameters[i], dev)
+            if ruquant_parameters.get(i):
+                qlayer.load_smooth_params(ruquant_parameters[i], dev)
             else:
                 qlayer.register_parameter("qkt_smooth_scale",torch.nn.Parameter(torch.ones(layer.self_attn.q_proj.out_features,device=dev, dtype=dtype), requires_grad=False))
                 for name,module in qlayer.named_modules():
@@ -270,22 +270,22 @@ def ruquant(
 
         # real smooth and quantization      
         if args.quant_method == 'ruquant':
-            set_init_duquant_params_state(qlayer, False)
+            set_init_ruquant_params_state(qlayer, False)
             set_quant_state(qlayer, weight_quant=True, act_quant=True)
-            if duquant_parameters.get(i):
-                qlayer.load_duquant_params(duquant_parameters[i], dev)
+            if ruquant_parameters.get(i):
+                qlayer.load_ruquant_params(ruquant_parameters[i], dev)
             else:
                 with torch.no_grad():
                     with torch.cuda.amp.autocast():
                         set_registered_x_none(qlayer)
                         rotate_inps = qlayer(rotate_inps.unsqueeze(0), attention_mask=attention_mask,position_ids=position_ids)[0][0]
-            qlayer.register_duquant_params()
-            set_init_duquant_params_state(qlayer, True)
+            qlayer.register_ruquant_params()
+            set_init_ruquant_params_state(qlayer, True)
         
         if args.let:
             set_quant_state(qlayer, weight_quant=True, act_quant=True)
-            if duquant_parameters.get(i):
-                qlayer.load_post_parameter(duquant_parameters[i], dev)
+            if ruquant_parameters.get(i):
+                qlayer.load_post_parameter(ruquant_parameters[i], dev)
             else:
                 qlayer.register_parameter("qkt_post_scale",torch.nn.Parameter(torch.ones(layer.self_attn.q_proj.out_features,device=dev, dtype=dtype)))
                 for name,module in qlayer.named_modules():
@@ -312,9 +312,9 @@ def ruquant(
                             opt_omg=module.weight_quantizer.omg
                             qlayer.register_parameter(f"{pairs[key]}_opt_omg",torch.nn.Parameter(opt_omg, requires_grad=True))
                            
-        if duquant_parameters.get(i):
+        if ruquant_parameters.get(i):
             if args.lwc:
-                qlayer.load_lwc_params(duquant_parameters[i], dev)
+                qlayer.load_lwc_params(ruquant_parameters[i], dev)
                 
         if args.epochs > 0:
             with torch.no_grad():
@@ -390,15 +390,15 @@ def ruquant(
                         quant_inps[j] = qlayer(quant_inps[j].unsqueeze(0), attention_mask=attention_mask,position_ids=position_ids)[0]
             register_scales_and_zeros(qlayer)
             layers[i] = qlayer.to("cpu")
-            duquant_parameters[i] = duquant_state_dict(qlayer)
+            ruquant_parameters[i] = ruquant_state_dict(qlayer)
             if args.save_dir:
-                torch.save(duquant_parameters, os.path.join(args.save_dir, f"duquant_parameters.pth"))
+                torch.save(ruquant_parameters, os.path.join(args.save_dir, f"ruquant_parameters.pth"))
         else:
             register_scales_and_zeros(qlayer)
             layers[i] = qlayer.to("cpu")
-            duquant_parameters[i] = duquant_state_dict(qlayer)
+            ruquant_parameters[i] = ruquant_state_dict(qlayer)
             if args.save_dir:
-                torch.save(duquant_parameters, os.path.join(args.save_dir, f"duquant_parameters.pth"))
+                torch.save(ruquant_parameters, os.path.join(args.save_dir, f"ruquant_parameters.pth"))
 
         
         del layer

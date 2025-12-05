@@ -1,12 +1,10 @@
 #!/bin/bash
 
-CUDA_VISIBLE_DEVICES=1 python main.py \
-    --block_size 128 \
-    --max_rotation_step 16 \
+CUDA_VISIBLE_DEVICES=0 python main.py \
     --epochs 0 \
     --wbits 4 \
     --abits 4 \
-    --model madel_path \
+    --model /path/to/your/model \
     --alpha 0.6 \
     --smooth \
     --lac 0.9 \

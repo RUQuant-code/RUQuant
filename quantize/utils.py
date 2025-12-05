@@ -39,7 +39,7 @@ def lh_parameters(model):
     return iter(params) 
 
 
-def get_duquant_parameters(model, use_shift=True):
+def get_ruquant_parameters(model, use_shift=True):
     params = []
     template = "smooth" if use_shift else "smooth_scale"
     for n, m in model.named_parameters():
@@ -59,17 +59,17 @@ def set_requires_grad(it, requires_grad):
     for param in it:
         param.requires_grad = requires_grad
 
-def duquant_state_dict(model, destination=None, prefix='', keep_vars=False):
+def ruquant_state_dict(model, destination=None, prefix='', keep_vars=False):
     if destination is None:
         destination = OrderedDict()
     for name, param in model.named_parameters():
         if name.find('smooth') > -1 or name.find('bound_factor') > -1 or name.find('trans') > -1 or name.find('post')>-1:
             destination[prefix + name] = param if keep_vars else param.detach()
     for name, param in model.named_buffers():
-        if name.find('omg') > -1 or name.find('R') > -1 or name.find('sort_index') > -1 or name.find('init_duquant_params') > -1 or name.find('permutation_list') > -1:
+        if name.find('omg') > -1 or name.find('R') > -1 or name.find('sort_index') > -1 or name.find('init_ruquant_params') > -1 or name.find('permutation_list') > -1:
             destination[prefix + name] = param if keep_vars else param.detach()      
     # for name, param in model.named_buffers():
-    #     if name.find('init_duquant_params') > -1 or name.find('R') > -1 or name.find('permutation_list') > -1:
+    #     if name.find('init_ruquant_params') > -1 or name.find('R') > -1 or name.find('permutation_list') > -1:
     #         destination[prefix + name] = param if keep_vars else param.detach()
     return destination
 
@@ -165,12 +165,12 @@ def set_registered_x_none(model):
 
 
 @torch.no_grad()
-def set_init_duquant_params_state(model, mode):
+def set_init_ruquant_params_state(model, mode):
     if isinstance(mode, bool):
         mode = torch.tensor(mode)
     for name, module in model.named_modules():
-        if hasattr(module, "init_duquant_params"):
-            module.init_duquant_params = mode
+        if hasattr(module, "init_ruquant_params"):
+            module.init_ruquant_params = mode
 
 def smooth_and_quant_temporary(model, args, isllama):
     if args.smooth:
